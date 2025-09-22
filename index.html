@@ -2,9 +2,222 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Blank Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Website - NativePHP Communication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .message-log {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            border: none;
+            border-radius: 3px;
+        }
+    </style>
 </head>
 <body>
-    <h1>This is a test page</h1>
+    <div class="container">
+        <h1>🛍️ Test Website</h1>
+        <p>Testing communication with NativePHP app</p>
+        
+        <div class="input-group">
+            <h3>Received from App:</h3>
+            <div id="app-data" class="message-log">
+                <em>Waiting for app data...</em>
+            </div>
+        </div>
+        
+        <div class="input-group">
+            <h3>Send to App:</h3>
+            <button onclick="sendCartUpdate()">🛒 Send Cart Update</button>
+            <button onclick="sendUserLogin()">👤 Send User Login</button>
+            <button onclick="sendCustomMessage()">💬 Send Custom Message</button>
+        </div>
+        
+        <div class="input-group">
+            <h3>Simulate Shopping Cart:</h3>
+            <select id="product-select">
+                <option value="product1">Product 1 - $10</option>
+                <option value="product2">Product 2 - $25</option>
+                <option value="product3">Product 3 - $15</option>
+            </select>
+            <input type="number" id="quantity" value="1" min="1" max="10">
+            <button onclick="addToCart()">Add to Cart</button>
+            <button onclick="clearCart()">Clear Cart</button>
+        </div>
+        
+        <div class="input-group">
+            <h3>Shopping Cart:</h3>
+            <div id="cart-display" class="message-log">
+                <em>Cart is empty</em>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let cart = [];
+        let appData = null;
+        
+        // Listen for messages from the parent app
+        window.addEventListener('message', function(event) {
+            console.log('Website received message:', event.data);
+            
+            switch(event.data.type) {
+                case 'app_data':
+                    appData = event.data.payload;
+                    displayAppData(appData);
+                    break;
+                default:
+                    console.log('Unknown message type:', event.data.type);
+            }
+        });
+        
+        function displayAppData(data) {
+            const appDataDiv = document.getElementById('app-data');
+            appDataDiv.innerHTML = `
+                <strong>App Data Received:</strong><br>
+                User ID: ${data.userId || 'Not logged in'}<br>
+                Theme: ${data.theme}<br>
+                Language: ${data.language}<br>
+                <small>Received at: ${new Date().toLocaleTimeString()}</small>
+            `;
+        }
+        
+        function sendToApp(type, payload) {
+            const message = {
+                type: type,
+                payload: payload,
+                timestamp: new Date().toISOString()
+            };
+            
+            console.log('Website sending to app:', message);
+            window.parent.postMessage(message, '*');
+        }
+        
+        function sendCartUpdate() {
+            sendToApp('cart_update', {
+                items: cart,
+                total: calculateTotal(),
+                itemCount: cart.reduce((sum, item) => sum + item.quantity, 0)
+            });
+        }
+        
+        function sendUserLogin() {
+            sendToApp('user_login', {
+                userId: 'user_' + Math.floor(Math.random() * 1000),
+                email: 'test@example.com',
+                name: 'Test User',
+                loginTime: new Date().toISOString()
+            });
+        }
+        
+        function sendCustomMessage() {
+            const message = prompt('Enter custom message:');
+            if (message) {
+                sendToApp('custom', {
+                    message: message,
+                    from: 'website'
+                });
+            }
+        }
+        
+        function addToCart() {
+            const productSelect = document.getElementById('product-select');
+            const quantity = parseInt(document.getElementById('quantity').value);
+            
+            const productId = productSelect.value;
+            const productText = productSelect.options[productSelect.selectedIndex].text;
+            const price = parseFloat(productText.match(/\$(\d+)/)[1]);
+            
+            // Check if product already in cart
+            const existingItem = cart.find(item => item.id === productId);
+            if (existingItem) {
+                existingItem.quantity += quantity;
+            } else {
+                cart.push({
+                    id: productId,
+                    name: productText.split(' - ')[0],
+                    price: price,
+                    quantity: quantity
+                });
+            }
+            
+            updateCartDisplay();
+            sendCartUpdate();
+        }
+        
+        function clearCart() {
+            cart = [];
+            updateCartDisplay();
+            sendCartUpdate();
+        }
+        
+        function updateCartDisplay() {
+            const cartDiv = document.getElementById('cart-display');
+            
+            if (cart.length === 0) {
+                cartDiv.innerHTML = '<em>Cart is empty</em>';
+                return;
+            }
+            
+            let html = '<strong>Cart Contents:</strong><br>';
+            cart.forEach(item => {
+                html += `${item.name} - $${item.price} x ${item.quantity} = $${(item.price * item.quantity).toFixed(2)}<br>`;
+            });
+            html += `<br><strong>Total: $${calculateTotal().toFixed(2)}</strong>`;
+            
+            cartDiv.innerHTML = html;
+        }
+        
+        function calculateTotal() {
+            return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+        }
+        
+        // Send ready signal to app when page loads
+        window.addEventListener('load', function() {
+            console.log('Website loaded, sending ready signal');
+            sendToApp('ready', {
+                url: window.location.href,
+                title: document.title
+            });
+        });
+    </script>
 </body>
 </html>
